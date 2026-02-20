@@ -87,9 +87,15 @@ See [SECURITY.md](SECURITY.md) for more details.
 
 - Service status:
 
-```bash
-systemctl --user status vpn-tray.service
-```
+  ```bash
+  systemctl --user status vpn-tray.service
+  ```
+
+- Journal log:
+
+  ```
+  journalctl --user -u vpn-tray
+  ```
 
 - If keyring backend is missing, install `python-keyring` in the Python environment used by the service.
 - If auto-reconnect is inactive, verify `dbus-monitor` is installed.
