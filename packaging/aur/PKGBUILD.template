@@ -1,0 +1,43 @@
+# Maintainer: vpn-tray maintainers
+
+pkgname=@PKGNAME@
+pkgver=@PKGVER@
+pkgrel=@PKGREL@
+pkgdesc='System tray app for OpenConnect VPN with least-privilege helper'
+arch=('any')
+url='@REPO_URL@'
+license=('MIT')
+depends=('dbus' 'openconnect' 'oathtool' 'python' 'python-keyring' 'python-pyqt6' 'sudo' 'systemd')
+optdepends=('python-secretstorage: recommended keyring backend on Linux')
+install="${pkgname}.install"
+source=("vpn-tray-${pkgver}.tar.gz::@SOURCE_URL@" "${pkgname}.install")
+sha256sums=('@SHA256SUM@' '@INSTALL_SHA256SUM@')
+
+package() {
+  cd "${srcdir}/@SRC_DIR@"
+
+  install -Dm755 vpn-tray.py "${pkgdir}/usr/lib/${pkgname}/vpn-tray.py"
+  install -Dm755 vpn-tray-helper.sh "${pkgdir}/usr/lib/${pkgname}/vpn-tray-helper.sh"
+
+  install -Dm755 /dev/stdin "${pkgdir}/usr/bin/${pkgname}" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/python3 /usr/lib/@PKGNAME@/vpn-tray.py "$@"
+EOF
+
+  install -d "${pkgdir}/usr/lib/systemd/user"
+  sed \
+    -e 's|@VPN_TRAY_HELPER@|/usr/lib/@PKGNAME@/vpn-tray-helper.sh|g' \
+    -e 's|@VPN_TRAY_RUNTIME_DIR@|%t/vpn-tray|g' \
+    -e 's|@VPN_TRAY_PID_FILENAME@|vpn_tray.pid|g' \
+    -e 's|@VPN_TRAY_LOCK_FILE@|%t/vpn-tray.lock|g' \
+    packaging/systemd/vpn-tray.service > "${pkgdir}/usr/lib/systemd/user/vpn-tray.service"
+
+  install -d "${pkgdir}/usr/share/doc/${pkgname}/examples"
+  sed \
+    -e 's|@INSTALL_USER@|<your-username>|g' \
+    -e 's|@HELPER_PATH@|/usr/lib/@PKGNAME@/vpn-tray-helper.sh|g' \
+    packaging/sudoers/vpn-tray > "${pkgdir}/usr/share/doc/${pkgname}/examples/sudoers.vpn-tray"
+  chmod 0440 "${pkgdir}/usr/share/doc/${pkgname}/examples/sudoers.vpn-tray"
+
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

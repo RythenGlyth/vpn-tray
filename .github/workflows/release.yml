@@ -1,0 +1,223 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_release:
+    name: Build release assets
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute release variables
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" || -z "${TAG}" ]]; then
+            echo "This workflow must run from a tag (for example: v1.2.3)." >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          if [[ -z "${VERSION}" || "${VERSION}" == "${TAG}" ]]; then
+            echo "Tag must start with 'v', received: ${TAG}" >&2
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "repo_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build source tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ steps.vars.outputs.version }}"
+          TAG="${{ steps.vars.outputs.tag }}"
+          SRC_DIR="vpn-tray-${VERSION}"
+          git archive --format=tar.gz --prefix="${SRC_DIR}/" --output="dist/vpn-tray-${VERSION}.tar.gz" "${TAG}"
+
+      - name: Render AUR package files
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.vars.outputs.version }}"
+          TAG="${{ steps.vars.outputs.tag }}"
+          REPO_URL="${{ steps.vars.outputs.repo_url }}"
+          SOURCE_URL="${REPO_URL}/releases/download/${TAG}/vpn-tray-${VERSION}.tar.gz"
+          SOURCE_SHA="$(sha256sum "dist/vpn-tray-${VERSION}.tar.gz" | awk '{print $1}')"
+
+          export PKGNAME="vpn-tray"
+          export PKGVER="${VERSION}"
+          export PKGREL="1"
+          export REPO_URL
+          export SOURCE_URL
+          export SHA256SUM="${SOURCE_SHA}"
+          export INSTALL_SHA256SUM="$(sha256sum packaging/aur/vpn-tray.install | awk '{print $1}')"
+          export SRC_DIR="vpn-tray-${VERSION}"
+
+          python3 - <<'PY'
+import os
+from pathlib import Path
+
+src = Path("packaging/aur/PKGBUILD.template")
+out = Path("dist/PKGBUILD")
+text = src.read_text(encoding="utf-8")
+for key in [
+    "PKGNAME",
+    "PKGVER",
+    "PKGREL",
+    "REPO_URL",
+    "SOURCE_URL",
+    "SHA256SUM",
+    "INSTALL_SHA256SUM",
+    "SRC_DIR",
+]:
+    text = text.replace(f"@{key}@", os.environ[key])
+out.write_text(text, encoding="utf-8")
+PY
+          cp packaging/aur/vpn-tray.install dist/vpn-tray.install
+
+      - name: Generate .SRCINFO from PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/dist:/work" -w /work archlinux:latest bash -lc '
+            set -euo pipefail
+            pacman -Sy --noconfirm --needed base-devel namcap >/dev/null
+            useradd -m builder
+            chown -R builder:builder /work
+            su builder -c "makepkg --printsrcinfo > .SRCINFO"
+            su builder -c "namcap PKGBUILD"
+          '
+
+      - name: Build .deb package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.vars.outputs.version }}"
+          PKGROOT="build/deb/vpn-tray_${VERSION}_all"
+
+          rm -rf build/deb
+          mkdir -p "${PKGROOT}/DEBIAN"
+          mkdir -p "${PKGROOT}/usr/lib/vpn-tray"
+          mkdir -p "${PKGROOT}/usr/lib/systemd/user"
+          mkdir -p "${PKGROOT}/usr/bin"
+          mkdir -p "${PKGROOT}/usr/share/doc/vpn-tray/examples"
+
+          install -m 0755 vpn-tray.py "${PKGROOT}/usr/lib/vpn-tray/vpn-tray.py"
+          install -m 0755 vpn-tray-helper.sh "${PKGROOT}/usr/lib/vpn-tray/vpn-tray-helper.sh"
+
+          cat > "${PKGROOT}/usr/bin/vpn-tray" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/python3 /usr/lib/vpn-tray/vpn-tray.py "$@"
+EOF
+          chmod 0755 "${PKGROOT}/usr/bin/vpn-tray"
+
+          sed \
+            -e 's|@VPN_TRAY_HELPER@|/usr/lib/vpn-tray/vpn-tray-helper.sh|g' \
+            -e 's|@VPN_TRAY_RUNTIME_DIR@|%t/vpn-tray|g' \
+            -e 's|@VPN_TRAY_PID_FILENAME@|vpn_tray.pid|g' \
+            -e 's|@VPN_TRAY_LOCK_FILE@|%t/vpn-tray.lock|g' \
+            packaging/systemd/vpn-tray.service > "${PKGROOT}/usr/lib/systemd/user/vpn-tray.service"
+
+          sed \
+            -e 's|@INSTALL_USER@|<your-username>|g' \
+            -e 's|@HELPER_PATH@|/usr/lib/vpn-tray/vpn-tray-helper.sh|g' \
+            packaging/sudoers/vpn-tray > "${PKGROOT}/usr/share/doc/vpn-tray/examples/sudoers.vpn-tray"
+          chmod 0440 "${PKGROOT}/usr/share/doc/vpn-tray/examples/sudoers.vpn-tray"
+
+          install -m 0644 LICENSE "${PKGROOT}/usr/share/doc/vpn-tray/LICENSE"
+          install -m 0644 README.md "${PKGROOT}/usr/share/doc/vpn-tray/README.md"
+
+          cat > "${PKGROOT}/DEBIAN/control" <<EOF
+Package: vpn-tray
+Version: ${VERSION}
+Section: net
+Priority: optional
+Architecture: all
+Depends: openconnect, oathtool, python3, python3-pyqt6, python3-keyring, sudo, systemd
+Maintainer: vpn-tray maintainers
+Description: System tray app for OpenConnect VPN with least-privilege helper
+ A Linux system tray app for OpenConnect VPN with user-level UX and
+ a least-privilege privileged helper.
+EOF
+
+          dpkg-deb --build --root-owner-group "${PKGROOT}" "dist/vpn-tray_${VERSION}_all.deb"
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum * > sha256sums.txt)
+
+      - name: Upload CI artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/*
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/vpn-tray-${{ steps.vars.outputs.version }}.tar.gz
+            dist/vpn-tray_${{ steps.vars.outputs.version }}_all.deb
+            dist/PKGBUILD
+            dist/.SRCINFO
+            dist/vpn-tray.install
+            dist/sha256sums.txt
+
+      - name: Update AUR package
+        shell: bash
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret not found, skipping AUR update."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          echo "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p aur-repo
+          git clone "ssh://aur@aur.archlinux.org/vpn-tray.git" aur-repo
+          
+          # Copy new files over
+          cp -f dist/PKGBUILD aur-repo/PKGBUILD
+          cp -f dist/.SRCINFO aur-repo/.SRCINFO
+          cp -f dist/vpn-tray.install aur-repo/vpn-tray.install
+          
+          cd aur-repo
+          git add PKGBUILD .SRCINFO vpn-tray.install
+          
+          # Check for changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Update to ${{ steps.vars.outputs.version }}"
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push origin master
+          else
+            echo "No changes detected in AUR package."
+          fi

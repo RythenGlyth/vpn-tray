@@ -1,6 +1,20 @@
 # vpn-tray
 
-A Linux system tray app for OpenConnect VPN with user-level UX and a least-privilege privileged helper.
+[![Release](https://img.shields.io/github/v/release/RythenGlyth/vpn-tray?sort=semver)](https://github.com/RythenGlyth/vpn-tray/releases)
+[![Release build](https://img.shields.io/github/actions/workflow/status/RythenGlyth/vpn-tray/release.yml?label=release%20build)](https://github.com/RythenGlyth/vpn-tray/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/RythenGlyth/vpn-tray)](LICENSE)
+
+A Linux system tray app for OpenConnect VPN with a user-friendly workflow and a least-privilege helper.
+
+## Quickstart
+
+```bash
+git clone https://github.com/RythenGlyth/vpn-tray.git
+cd vpn-tray
+./install.sh
+```
+
+Then open the tray app and add your first connection in **Settings**.
 
 ## Features
 
@@ -24,29 +38,83 @@ A Linux system tray app for OpenConnect VPN with user-level UX and a least-privi
   - `resolvectl flush-caches`
   - `nmcli general reload`
 
-## Install
+## Requirements
 
-From repository root:
+- Linux desktop environment with tray support (StatusNotifier/AppIndicator or legacy XEmbed system tray)
+- `openconnect`
+- `oathtool`
+- `dbus-monitor` (for auto-reconnect monitor)
+- Python 3 + `PyQt6` + `keyring` (with Qt6 runtime libraries available)
+- systemd user session
+- sudo + `visudo`
+
+## Installation
+
+### Arch Linux
+
+**Option A: Install from AUR (Recommended)**
 
 ```bash
+yay -S vpn-tray
+```
+*(Or use your preferred AUR helper)*
+
+**Option B: Build manually**
+
+Download `PKGBUILD` and `vpn-tray.install` from the [latest release](https://github.com/RythenGlyth/vpn-tray/releases) into a directory, then run:
+
+```bash
+makepkg -si
+```
+
+### Debian / Ubuntu
+
+Download the latest `.deb` package from [releases](https://github.com/RythenGlyth/vpn-tray/releases) and install:
+
+```bash
+sudo apt install ./vpn-tray_<version>_all.deb
+```
+
+### From Source
+
+You can install directly from the repository or from the source tarball.
+
+**Method 1: Git Clone**
+
+```bash
+git clone https://github.com/RythenGlyth/vpn-tray.git
+cd vpn-tray
 ./install.sh
 ```
 
-Optional installer flags:
+**Method 2: Source Tarball**
 
-- `--user <name>`
-- `--runtime-dir <path>`
-- `--pid-filename <name>`
-- `--lock-file <path>`
-- `--update` (forces user service restart after install)
+Download `vpn-tray-<version>.tar.gz` from [releases](https://github.com/RythenGlyth/vpn-tray/releases).
 
-## Update
+```bash
+tar -xzf vpn-tray-<version>.tar.gz
+cd vpn-tray-<version>
+./install.sh
+```
+
+#### Installer Options
+
+The `./install.sh` script accepts the following arguments:
+
+- `--user <name>`: Install for a specific user (defaults to current)
+- `--runtime-dir <path>`: Override runtime directory
+- `--pid-filename <name>`: Override PID filename
+- `--lock-file <path>`: Override lock file path
+- `--update`: Force restart of the user service after install
+
+
+## Updating
 
 ```bash
 ./install.sh --update
 ```
 
-## Uninstall
+## Uninstalling
 
 ```bash
 ./uninstall.sh
@@ -60,16 +128,6 @@ Optional installer flags:
 - User service: `~/.config/systemd/user/vpn-tray.service`
 - Profiles: `~/.config/vpn-tray/connections.json`
 - Sudo policy: `/etc/sudoers.d/vpn-tray`
-
-## Requirements
-
-- Linux desktop environment with tray support (StatusNotifier/AppIndicator or legacy XEmbed system tray)
-- `openconnect`
-- `oathtool`
-- `dbus-monitor` (for auto-reconnect monitor)
-- Python 3 + `PyQt6` + `keyring` (with Qt6 runtime libraries available)
-- systemd user session
-- sudo + `visudo`
 
 ## Security Note
 
