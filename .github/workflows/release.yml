@@ -90,7 +90,7 @@ jobs:
             pacman -Sy --noconfirm --needed base-devel namcap >/dev/null
             useradd -m builder
             chown -R builder:builder /work
-            su builder -c "makepkg --printsrcinfo > .SRCINFO"
+            su builder -c "makepkg --printsrcinfo > SRCINFO"
             su builder -c "namcap PKGBUILD"
           '
           sudo chown -R $USER:$USER dist
@@ -166,7 +166,7 @@ jobs:
             dist/vpn-tray-${{ steps.vars.outputs.version }}.tar.gz
             dist/vpn-tray_${{ steps.vars.outputs.version }}_all.deb
             dist/PKGBUILD
-            dist/.SRCINFO
+            dist/SRCINFO
             dist/vpn-tray.install
             dist/sha256sums.txt
 
@@ -195,7 +195,7 @@ jobs:
 
           # Copy new files over
           cp -f dist/PKGBUILD aur-repo/PKGBUILD
-          cp -f dist/.SRCINFO aur-repo/.SRCINFO
+          cp -f dist/SRCINFO aur-repo/.SRCINFO
           cp -f dist/vpn-tray.install aur-repo/vpn-tray.install
 
           cd aur-repo
