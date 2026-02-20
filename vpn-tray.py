@@ -279,6 +279,7 @@ class VPNApp:
         self.config_file: str = os.path.join(self.config_dir, "connections.json")
         self.connection_profiles: list[ConnectionProfile] = []
         self.active_connection_name: Optional[str] = None
+        self.connection_actions: list[QAction] = []
         self.settings_dialog: Optional[ConnectionSettingsDialog] = None
         self.recent_err_lines: deque[str] = deque(maxlen=12)
         self._connected_emitted: bool = False
@@ -308,9 +309,9 @@ class VPNApp:
         self.disconnect_action.triggered.connect(self.disconnect_vpn)
         self.menu.addAction(self.disconnect_action)
 
-        self.connection_menu = QMenu("Connections")
-        self.connection_menu.aboutToShow.connect(self._refresh_connection_menu)
+        self.connection_menu = QMenu("Connections", self.menu)
         self.menu.addMenu(self.connection_menu)
+        self.connection_menu.aboutToShow.connect(self._refresh_connection_menu)
 
         self.settings_action = QAction("Settings...")
         self.settings_action.triggered.connect(self.open_settings)
@@ -414,6 +415,7 @@ class VPNApp:
 
     def _refresh_connection_menu(self) -> None:
         self.connection_menu.clear()
+        self.connection_actions.clear()
         if not self.connection_profiles:
             no_profiles_action = QAction("No connections configured")
             no_profiles_action.setEnabled(False)
@@ -423,10 +425,11 @@ class VPNApp:
 
         for profile in self.connection_profiles:
             name = profile["name"]
-            action = QAction(name)
+            action = QAction(name, self.connection_menu)
             action.setCheckable(True)
             action.setChecked(name == self.active_connection_name)
-            action.triggered.connect(lambda checked, n=name: self._set_active_connection(n))
+            action.triggered.connect(lambda _checked, n=name: self._set_active_connection(n))
+            self.connection_actions.append(action)
             self.connection_menu.addAction(action)
 
         self._update_connect_action_label()
