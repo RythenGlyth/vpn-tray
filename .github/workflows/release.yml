@@ -69,25 +69,16 @@ jobs:
           export INSTALL_SHA256SUM="$(sha256sum packaging/aur/vpn-tray.install | awk '{print $1}')"
           export SRC_DIR="vpn-tray-${VERSION}"
 
-          cat <<EOF > render_pkgbuild.py
-          import os
-          from pathlib import Path
-
-          src = Path("packaging/aur/PKGBUILD.template")
-          out = Path("dist/PKGBUILD")
-          text = src.read_text(encoding="utf-8")
-          keys = [
-              "PKGNAME", "PKGVER", "PKGREL", "REPO_URL",
-              "SOURCE_URL", "SHA256SUM", "INSTALL_SHA256SUM", "SRC_DIR"
-          ]
-          for key in keys:
-              text = text.replace(f"@{key}@", os.environ[key])
-          out.write_text(text, encoding="utf-8")
-          EOF
-          
-          # Strip leading indentation (10 spaces) from the python script
-          sed -i 's/^          //' render_pkgbuild.py
-          python3 render_pkgbuild.py
+          sed \
+            -e "s|@PKGNAME@|${PKGNAME}|g" \
+            -e "s|@PKGVER@|${PKGVER}|g" \
+            -e "s|@PKGREL@|${PKGREL}|g" \
+            -e "s|@REPO_URL@|${REPO_URL}|g" \
+            -e "s|@SOURCE_URL@|${SOURCE_URL}|g" \
+            -e "s|@SHA256SUM@|${SHA256SUM}|g" \
+            -e "s|@INSTALL_SHA256SUM@|${INSTALL_SHA256SUM}|g" \
+            -e "s|@SRC_DIR@|${SRC_DIR}|g" \
+            packaging/aur/PKGBUILD.template > dist/PKGBUILD
           cp packaging/aur/vpn-tray.install dist/vpn-tray.install
 
       - name: Generate .SRCINFO from PKGBUILD
@@ -120,11 +111,8 @@ jobs:
           install -m 0755 vpn-tray.py "${PKGROOT}/usr/lib/vpn-tray/vpn-tray.py"
           install -m 0755 vpn-tray-helper.sh "${PKGROOT}/usr/lib/vpn-tray/vpn-tray-helper.sh"
 
-          cat <<EOF > "${PKGROOT}/usr/bin/vpn-tray"
-          #!/usr/bin/env bash
-          exec /usr/bin/python3 /usr/lib/vpn-tray/vpn-tray.py "\$@"
-          EOF
-          sed -i 's/^          //' "${PKGROOT}/usr/bin/vpn-tray"
+          # Wrapper script
+          printf '#!/usr/bin/env bash\nexec /usr/bin/python3 /usr/lib/vpn-tray/vpn-tray.py "$@"\n' > "${PKGROOT}/usr/bin/vpn-tray"
           chmod 0755 "${PKGROOT}/usr/bin/vpn-tray"
 
           sed \
@@ -140,22 +128,19 @@ jobs:
             packaging/sudoers/vpn-tray > "${PKGROOT}/usr/share/doc/vpn-tray/examples/sudoers.vpn-tray"
           chmod 0440 "${PKGROOT}/usr/share/doc/vpn-tray/examples/sudoers.vpn-tray"
 
-          install -m 0644 LICENSE "${PKGROOT}/usr/share/doc/vpn-tray/LICENSE"
-          install -m 0644 README.md "${PKGROOT}/usr/share/doc/vpn-tray/README.md"
-
-          cat <<EOF > "${PKGROOT}/DEBIAN/control"
-          Package: vpn-tray
-          Version: ${VERSION}
-          Section: net
-          Priority: optional
-          Architecture: all
-          Depends: openconnect, oathtool, python3, python3-pyqt6, python3-keyring, sudo, systemd
-          Maintainer: vpn-tray maintainers
-          Description: System tray app for OpenConnect VPN with least-privilege helper
-           A Linux system tray app for OpenConnect VPN with user-level UX and
-           a least-privilege privileged helper.
-          EOF
-          sed -i 's/^          //' "${PKGROOT}/DEBIAN/control"
+          # Control file creation
+          printf '%s\n' \
+            "Package: vpn-tray" \
+            "Version: ${VERSION}" \
+            "Section: net" \
+            "Priority: optional" \
+            "Architecture: all" \
+            "Depends: openconnect, oathtool, python3, python3-pyqt6, python3-keyring, sudo, systemd" \
+            "Maintainer: vpn-tray maintainers" \
+            "Description: System tray app for OpenConnect VPN with least-privilege helper" \
+            " A Linux system tray app for OpenConnect VPN with user-level UX and" \
+            " a least-privilege privileged helper." \
+            > "${PKGROOT}/DEBIAN/control"
 
           dpkg-deb --build --root-owner-group "${PKGROOT}" "dist/vpn-tray_${VERSION}_all.deb"
 
@@ -206,15 +191,15 @@ jobs:
 
           mkdir -p aur-repo
           git clone "ssh://aur@aur.archlinux.org/vpn-tray.git" aur-repo
-          
+
           # Copy new files over
           cp -f dist/PKGBUILD aur-repo/PKGBUILD
           cp -f dist/.SRCINFO aur-repo/.SRCINFO
           cp -f dist/vpn-tray.install aur-repo/vpn-tray.install
-          
+
           cd aur-repo
           git add PKGBUILD .SRCINFO vpn-tray.install
-          
+
           # Check for changes
           if ! git diff --cached --quiet; then
             git commit -m "Update to ${{ steps.vars.outputs.version }}"
