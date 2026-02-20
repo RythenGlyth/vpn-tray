@@ -11,6 +11,7 @@ import time
 import re
 import json
 import hashlib
+import shlex
 import subprocess
 import threading
 from collections import deque
@@ -49,6 +50,10 @@ class ConnectionProfile(TypedDict):
     server: str
     user: str
     auto_reconnect: bool
+    openconnect_flags: str
+
+
+DEFAULT_OPENCONNECT_FLAGS = "--useragent=AnyConnect --no-external-auth"
 
 
 KEYRING_SERVICE = "vpn-tray"
@@ -65,10 +70,12 @@ class ConnectionEditDialog(QDialog):
         initial_server = initial["server"] if initial is not None else ""
         initial_user = initial["user"] if initial is not None else ""
         initial_auto_reconnect = initial["auto_reconnect"] if initial is not None else True
+        initial_openconnect_flags = initial["openconnect_flags"] if initial is not None else DEFAULT_OPENCONNECT_FLAGS
 
         self.name_edit = QLineEdit(initial_name)
         self.server_edit = QLineEdit(initial_server)
         self.user_edit = QLineEdit(initial_user)
+        self.openconnect_flags_edit = QLineEdit(initial_openconnect_flags)
         self.auto_reconnect_check = QCheckBox("Enable auto-reconnect for this connection")
         self.auto_reconnect_check.setChecked(bool(initial_auto_reconnect))
 
@@ -80,6 +87,8 @@ class ConnectionEditDialog(QDialog):
         layout.addWidget(self.server_edit)
         layout.addWidget(QLabel("VPN User"))
         layout.addWidget(self.user_edit)
+        layout.addWidget(QLabel("OpenConnect Flags"))
+        layout.addWidget(self.openconnect_flags_edit)
         layout.addWidget(self.auto_reconnect_check)
 
         buttons = QHBoxLayout()
@@ -105,6 +114,7 @@ class ConnectionEditDialog(QDialog):
             "server": self.server_edit.text().strip(),
             "user": self.user_edit.text().strip(),
             "auto_reconnect": self.auto_reconnect_check.isChecked(),
+            "openconnect_flags": self.openconnect_flags_edit.text().strip() or DEFAULT_OPENCONNECT_FLAGS,
         }
 
 
@@ -366,9 +376,16 @@ class VPNApp:
         server = str(profile.get("server", "")).strip()
         user = str(profile.get("user", "")).strip()
         auto_reconnect = bool(profile.get("auto_reconnect", True))
+        openconnect_flags = str(profile.get("openconnect_flags", DEFAULT_OPENCONNECT_FLAGS)).strip()
         if not name or not server or not user:
             return None
-        return {"name": name, "server": server, "user": user, "auto_reconnect": auto_reconnect}
+        return {
+            "name": name,
+            "server": server,
+            "user": user,
+            "auto_reconnect": auto_reconnect,
+            "openconnect_flags": openconnect_flags or DEFAULT_OPENCONNECT_FLAGS,
+        }
 
     def _load_connections(self) -> None:
         self.connection_profiles = []
@@ -871,9 +888,14 @@ class VPNApp:
 
         vpn_server = profile["server"]
         vpn_user = profile["user"]
+        try:
+            openconnect_flags = shlex.split(profile["openconnect_flags"])
+        except ValueError as e:
+            self.log_error("Invalid OpenConnect flags in selected connection.", e)
+            return
 
         cmd = [
-            'sudo', '-n', self.helper_path, 'start', self.pid_filename, vpn_server, vpn_user
+            'sudo', '-n', self.helper_path, 'start', self.pid_filename, vpn_server, vpn_user, *openconnect_flags
         ]
         
         try:

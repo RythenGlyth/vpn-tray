@@ -7,7 +7,7 @@ PID_FILENAME="${2:-}"
 RUNTIME_DIR="${VPN_TRAY_RUNTIME_DIR:-}"
 
 usage() {
-    echo "Usage: vpn-tray-helper.sh {start|stop|reset} <pid_filename> [server] [user]" >&2
+    echo "Usage: vpn-tray-helper.sh {start|stop|reset} <pid_filename> [server] [user] [openconnect flags ...]" >&2
 }
 
 fail() {
@@ -145,6 +145,7 @@ PID_FILE="${RUNTIME_DIR}/${PID_FILENAME}"
 if [ "$COMMAND" = "start" ]; then
     SERVER="${3:-}"
     USERNAME="${4:-}"
+    EXTRA_OPENCONNECT_ARGS=("${@:5}")
 
     if [ -z "$SERVER" ] || [ -z "$USERNAME" ]; then
         fail "Missing server or username."
@@ -157,7 +158,7 @@ if [ "$COMMAND" = "start" ]; then
         fail "PID path exists and is not a regular file."
     fi
 
-    exec openconnect "$SERVER" -u "$USERNAME" --useragent=AnyConnect --no-external-auth --background --pid-file="$PID_FILE" -v
+    exec openconnect "$SERVER" -u "$USERNAME" "${EXTRA_OPENCONNECT_ARGS[@]}" --background --pid-file="$PID_FILE" -v
 
 elif [ "$COMMAND" = "stop" ]; then
     PID="$(read_pid_from_file "$PID_FILE" 2>/dev/null || true)"
