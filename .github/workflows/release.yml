@@ -69,26 +69,24 @@ jobs:
           export INSTALL_SHA256SUM="$(sha256sum packaging/aur/vpn-tray.install | awk '{print $1}')"
           export SRC_DIR="vpn-tray-${VERSION}"
 
-          cat <<'PY' > render_pkgbuild.py
-import os
-from pathlib import Path
+          cat <<EOF > render_pkgbuild.py
+          import os
+          from pathlib import Path
 
-src = Path("packaging/aur/PKGBUILD.template")
-out = Path("dist/PKGBUILD")
-text = src.read_text(encoding="utf-8")
-for key in [
-    "PKGNAME",
-    "PKGVER",
-    "PKGREL",
-    "REPO_URL",
-    "SOURCE_URL",
-    "SHA256SUM",
-    "INSTALL_SHA256SUM",
-    "SRC_DIR",
-]:
-    text = text.replace(f"@{key}@", os.environ[key])
-out.write_text(text, encoding="utf-8")
-PY
+          src = Path("packaging/aur/PKGBUILD.template")
+          out = Path("dist/PKGBUILD")
+          text = src.read_text(encoding="utf-8")
+          keys = [
+              "PKGNAME", "PKGVER", "PKGREL", "REPO_URL",
+              "SOURCE_URL", "SHA256SUM", "INSTALL_SHA256SUM", "SRC_DIR"
+          ]
+          for key in keys:
+              text = text.replace(f"@{key}@", os.environ[key])
+          out.write_text(text, encoding="utf-8")
+          EOF
+          
+          # Strip leading indentation (10 spaces) from the python script
+          sed -i 's/^          //' render_pkgbuild.py
           python3 render_pkgbuild.py
           cp packaging/aur/vpn-tray.install dist/vpn-tray.install
 
