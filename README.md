@@ -63,11 +63,11 @@ Optional installer flags:
 
 ## Requirements
 
-- Linux desktop with system tray support
+- Linux desktop environment with tray support (StatusNotifier/AppIndicator or legacy XEmbed system tray)
 - `openconnect`
 - `oathtool`
 - `dbus-monitor` (for auto-reconnect monitor)
-- Python 3 + `PyQt6` + `keyring`
+- Python 3 + `PyQt6` + `keyring` (with Qt6 runtime libraries available)
 - systemd user session
 - sudo + `visudo`
 
