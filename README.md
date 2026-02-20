@@ -27,7 +27,7 @@ Then open the tray app and add your first connection in **Settings**.
 - Network-aware auto-reconnect (listens to NetworkManager `StateChanged` via `dbus-monitor`)
   - Per-connection auto-reconnect toggle
 - Password + OTP secret storage through Python `keyring` backend
-- TOTP generation with `oathtool`
+- TOTP generation with `oathtool` (from `oath-toolkit`)
 - OpenConnect custom flags per connection
   - Default: `--useragent=AnyConnect --no-external-auth`
 - Least-privilege architecture:
@@ -42,7 +42,7 @@ Then open the tray app and add your first connection in **Settings**.
 
 - Linux desktop environment with tray support (StatusNotifier/AppIndicator or legacy XEmbed system tray)
 - `openconnect`
-- `oathtool`
+- `oath-toolkit` (provides `oathtool`)
 - `dbus-monitor` (for auto-reconnect monitor)
 - Python 3 + `PyQt6` + `keyring` (with Qt6 runtime libraries available)
 - systemd user session
