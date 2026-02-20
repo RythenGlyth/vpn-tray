@@ -104,6 +104,70 @@ read_pid_from_file() {
     return 0
 }
 
+ensure_runtime_layout() {
+    [ -L "$RUNTIME_DIR" ] && fail "Runtime directory must not be a symlink."
+    if [ ! -d "$RUNTIME_DIR" ]; then
+        umask 077
+        mkdir -p "$RUNTIME_DIR" || fail "Cannot create runtime directory: $RUNTIME_DIR"
+    fi
+    chmod 0700 "$RUNTIME_DIR" 2>/dev/null || true
+}
+
+validate_pid_file_path() {
+    [ -L "$PID_FILE" ] && fail "PID file must not be a symlink."
+}
+
+handle_start() {
+    local server="$1"
+    local username="$2"
+    shift 2
+    local extra_openconnect_args=("$@")
+
+    if [ -z "$server" ] || [ -z "$username" ]; then
+        fail "Missing server or username."
+    fi
+    if [[ "$server" == -* ]] || [[ "$username" == -* ]]; then
+        fail "Server and username cannot start with a hyphen."
+    fi
+
+    if [ -e "$PID_FILE" ] && [ ! -f "$PID_FILE" ]; then
+        fail "PID path exists and is not a regular file."
+    fi
+
+    exec openconnect "$server" -u "$username" "${extra_openconnect_args[@]}" --background --pid-file="$PID_FILE" -v
+}
+
+handle_stop() {
+    local pid
+    pid="$(read_pid_from_file "$PID_FILE" 2>/dev/null || true)"
+
+    if [ -n "$pid" ] && is_openconnect_pid "$pid"; then
+        graceful_stop_openconnect_pid "$pid"
+    fi
+
+    rm -f -- "$PID_FILE"
+    post_disconnect_dns_cleanup
+}
+
+handle_reset() {
+    local pid
+    local openconnect_pid
+    pid="$(read_pid_from_file "$PID_FILE" 2>/dev/null || true)"
+
+    if [ -n "$pid" ] && is_openconnect_pid "$pid"; then
+        graceful_stop_openconnect_pid "$pid"
+    fi
+
+    # Emergency reset: terminate any remaining openconnect instances.
+    for openconnect_pid in $(list_all_openconnect_pids); do
+        [ -n "$pid" ] && [ "$openconnect_pid" = "$pid" ] && continue
+        graceful_stop_openconnect_pid "$openconnect_pid"
+    done
+
+    rm -f -- "$PID_FILE"
+    post_disconnect_dns_cleanup
+}
+
 resolve_runtime_dir() {
     local uid_for_runtime
 
@@ -130,63 +194,23 @@ resolve_runtime_dir() {
 [ -n "$COMMAND" ] || { usage; exit 1; }
 sanitize_pid_filename "$PID_FILENAME" || fail "Invalid PID filename."
 resolve_runtime_dir
-
-[ -L "$RUNTIME_DIR" ] && fail "Runtime directory must not be a symlink."
-if [ ! -d "$RUNTIME_DIR" ]; then
-    umask 077
-    mkdir -p "$RUNTIME_DIR" || fail "Cannot create runtime directory: $RUNTIME_DIR"
-fi
-chmod 0700 "$RUNTIME_DIR" 2>/dev/null || true
+ensure_runtime_layout
 
 PID_FILE="${RUNTIME_DIR}/${PID_FILENAME}"
+validate_pid_file_path
 
-[ -L "$PID_FILE" ] && fail "PID file must not be a symlink."
-
-if [ "$COMMAND" = "start" ]; then
-    SERVER="${3:-}"
-    USERNAME="${4:-}"
-    EXTRA_OPENCONNECT_ARGS=("${@:5}")
-
-    if [ -z "$SERVER" ] || [ -z "$USERNAME" ]; then
-        fail "Missing server or username."
-    fi
-    if [[ "$SERVER" == -* ]] || [[ "$USERNAME" == -* ]]; then
-        fail "Server and username cannot start with a hyphen."
-    fi
-
-    if [ -e "$PID_FILE" ] && [ ! -f "$PID_FILE" ]; then
-        fail "PID path exists and is not a regular file."
-    fi
-
-    exec openconnect "$SERVER" -u "$USERNAME" "${EXTRA_OPENCONNECT_ARGS[@]}" --background --pid-file="$PID_FILE" -v
-
-elif [ "$COMMAND" = "stop" ]; then
-    PID="$(read_pid_from_file "$PID_FILE" 2>/dev/null || true)"
-
-    if [ -n "$PID" ] && is_openconnect_pid "$PID"; then
-        graceful_stop_openconnect_pid "$PID"
-    fi
-
-    rm -f -- "$PID_FILE"
-    post_disconnect_dns_cleanup
-
-elif [ "$COMMAND" = "reset" ]; then
-    PID="$(read_pid_from_file "$PID_FILE" 2>/dev/null || true)"
-
-    if [ -n "$PID" ] && is_openconnect_pid "$PID"; then
-        graceful_stop_openconnect_pid "$PID"
-    fi
-
-    # Emergency reset: terminate any remaining openconnect instances.
-    for OPENCONNECT_PID in $(list_all_openconnect_pids); do
-        [ -n "$PID" ] && [ "$OPENCONNECT_PID" = "$PID" ] && continue
-        graceful_stop_openconnect_pid "$OPENCONNECT_PID"
-    done
-
-    rm -f -- "$PID_FILE"
-    post_disconnect_dns_cleanup
-
-else
-    usage
-    exit 1
-fi
+case "$COMMAND" in
+    start)
+        handle_start "${3:-}" "${4:-}" "${@:5}"
+        ;;
+    stop)
+        handle_stop
+        ;;
+    reset)
+        handle_reset
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

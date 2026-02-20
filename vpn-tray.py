@@ -304,48 +304,9 @@ class VPNApp:
         if not self.acquire_single_instance_lock():
             print("Another vpn-tray instance is already running.", file=sys.stderr, flush=True)
             sys.exit(1)
-        
-        self.tray = QSystemTrayIcon()
-        self.tray.setToolTip("VPN-Tray")
-        self.tray.setIcon(QIcon.fromTheme("network-disconnect")) # Default to disconnected icon
-        
-        self.menu = QMenu()
-        
-        self.connect_action = QAction("Connect")
-        self.connect_action.triggered.connect(self.connect_vpn)
-        self.menu.addAction(self.connect_action)
-        
-        self.disconnect_action = QAction("Disconnect")
-        self.disconnect_action.triggered.connect(self.disconnect_vpn)
-        self.menu.addAction(self.disconnect_action)
 
-        self.connection_menu = QMenu("Connections", self.menu)
-        self.menu.addMenu(self.connection_menu)
-        self.connection_menu.aboutToShow.connect(self._refresh_connection_menu)
-
-        self.settings_action = QAction("Settings...")
-        self.settings_action.triggered.connect(self.open_settings)
-        self.menu.addAction(self.settings_action)
-
-        self.menu.addSeparator()
-        
-        self.reset_action = QAction("Emergency Reset")
-        self.reset_action.triggered.connect(self.force_reset)
-        self.menu.addAction(self.reset_action)
-        
-        self.menu.addSeparator()
-        
-        self.quit_action = QAction("Quit")
-        self.quit_action.triggered.connect(self.app.quit)
-        self.menu.addAction(self.quit_action)
-        
-        self.tray.setContextMenu(self.menu)
-        self.tray.show()
-        
-        self.signals = SignalHandler()
-        self.signals.connected_signal.connect(self.show_connected_msg)
-        self.signals.connect_failed_signal.connect(self.log_error)
-        self.signals.nm_state_changed_signal.connect(self._on_nm_state_changed)
+        self._init_tray_ui()
+        self._init_signal_handlers()
 
         self._load_connections()
         self._refresh_connection_menu()
@@ -368,6 +329,50 @@ class VPNApp:
         if xdg_config:
             return os.path.join(xdg_config, "vpn-tray")
         return os.path.join(os.path.expanduser("~/.config"), "vpn-tray")
+
+    def _init_tray_ui(self) -> None:
+        self.tray = QSystemTrayIcon()
+        self.tray.setToolTip("VPN-Tray")
+        self.tray.setIcon(QIcon.fromTheme("network-disconnect"))  # Default to disconnected icon
+
+        self.menu = QMenu()
+
+        self.connect_action = QAction("Connect")
+        self.connect_action.triggered.connect(self.connect_vpn)
+        self.menu.addAction(self.connect_action)
+
+        self.disconnect_action = QAction("Disconnect")
+        self.disconnect_action.triggered.connect(self.disconnect_vpn)
+        self.menu.addAction(self.disconnect_action)
+
+        self.connection_menu = QMenu("Connections", self.menu)
+        self.menu.addMenu(self.connection_menu)
+        self.connection_menu.aboutToShow.connect(self._refresh_connection_menu)
+
+        self.settings_action = QAction("Settings...")
+        self.settings_action.triggered.connect(self.open_settings)
+        self.menu.addAction(self.settings_action)
+
+        self.menu.addSeparator()
+
+        self.reset_action = QAction("Emergency Reset")
+        self.reset_action.triggered.connect(self.force_reset)
+        self.menu.addAction(self.reset_action)
+
+        self.menu.addSeparator()
+
+        self.quit_action = QAction("Quit")
+        self.quit_action.triggered.connect(self.app.quit)
+        self.menu.addAction(self.quit_action)
+
+        self.tray.setContextMenu(self.menu)
+        self.tray.show()
+
+    def _init_signal_handlers(self) -> None:
+        self.signals = SignalHandler()
+        self.signals.connected_signal.connect(self.show_connected_msg)
+        self.signals.connect_failed_signal.connect(self.log_error)
+        self.signals.nm_state_changed_signal.connect(self._on_nm_state_changed)
 
     def _normalize_profile(self, profile: Any) -> Optional[ConnectionProfile]:
         if not isinstance(profile, dict):
