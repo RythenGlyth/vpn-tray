@@ -59,6 +59,17 @@ yay -S vpn-tray
 ```
 *(Or use your preferred AUR helper)*
 
+> [!IMPORTANT]
+> **Post-install step required:** You must manually install the sudoers policy to allow the app to manage the VPN connection. Follow the instructions printed by `yay` or run:
+> ```bash
+> # 1. Install the policy (replace <your-username> with your actual username)
+> sudo sed "s|<your-username>|$USER|g" /usr/share/doc/vpn-tray/examples/sudoers.vpn-tray | sudo tee /etc/sudoers.d/vpn-tray > /dev/null
+> # 2. Set correct permissions
+> sudo chmod 0440 /etc/sudoers.d/vpn-tray
+> # 3. Validate and enable the service
+> sudo visudo -cf /etc/sudoers.d/vpn-tray && systemctl --user enable --now vpn-tray.service
+> ```
+
 **Option B: Build manually**
 
 Download `PKGBUILD` and `vpn-tray.install` from the [latest release](https://github.com/RythenGlyth/vpn-tray/releases) into a directory, then run:
