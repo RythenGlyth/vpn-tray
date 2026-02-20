@@ -191,7 +191,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           mkdir -p aur-repo
-          git clone "ssh://aur@aur.archlinux.org/vpn-tray.git" aur-repo
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git clone "ssh://aur@aur.archlinux.org/vpn-tray.git" aur-repo
 
           # Copy new files over
           cp -f dist/PKGBUILD aur-repo/PKGBUILD
