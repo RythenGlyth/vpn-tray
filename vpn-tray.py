@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
+from __future__ import annotations
+
 import sys
 import os
 import shutil
@@ -11,14 +14,11 @@ import hashlib
 import subprocess
 import threading
 from collections import deque
+from typing import Any, Optional, TypedDict
 try:
     import keyring
-    from keyring.errors import KeyringError
 except Exception:  # pragma: no cover - optional runtime dependency
     keyring = None
-
-    class KeyringError(Exception):
-        pass
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QMessageBox,
     QCheckBox,
+    QWidget,
 )
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import pyqtSignal, QObject
@@ -43,22 +44,33 @@ class SignalHandler(QObject):
     nm_state_changed_signal = pyqtSignal(int)
 
 
+class ConnectionProfile(TypedDict):
+    name: str
+    server: str
+    user: str
+    auto_reconnect: bool
+
+
 KEYRING_SERVICE = "vpn-tray"
 KEYRING_PASSWORD_SUFFIX = "password"
 KEYRING_OTP_SUFFIX = "otp_secret"
 
 
 class ConnectionEditDialog(QDialog):
-    def __init__(self, parent=None, initial=None):
+    def __init__(self, parent: Optional[QWidget] = None, initial: Optional[ConnectionProfile] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Connection")
 
-        initial = initial or {}
-        self.name_edit = QLineEdit(initial.get("name", ""))
-        self.server_edit = QLineEdit(initial.get("server", ""))
-        self.user_edit = QLineEdit(initial.get("user", ""))
+        initial_name = initial["name"] if initial is not None else ""
+        initial_server = initial["server"] if initial is not None else ""
+        initial_user = initial["user"] if initial is not None else ""
+        initial_auto_reconnect = initial["auto_reconnect"] if initial is not None else True
+
+        self.name_edit = QLineEdit(initial_name)
+        self.server_edit = QLineEdit(initial_server)
+        self.user_edit = QLineEdit(initial_user)
         self.auto_reconnect_check = QCheckBox("Enable auto-reconnect for this connection")
-        self.auto_reconnect_check.setChecked(bool(initial.get("auto_reconnect", True)))
+        self.auto_reconnect_check.setChecked(bool(initial_auto_reconnect))
 
         layout = QVBoxLayout()
 
@@ -81,13 +93,13 @@ class ConnectionEditDialog(QDialog):
 
         self.setLayout(layout)
 
-    def _on_save(self):
+    def _on_save(self) -> None:
         if not self.name_edit.text().strip() or not self.server_edit.text().strip() or not self.user_edit.text().strip():
             QMessageBox.warning(self, "Invalid input", "Name, VPN Server, and VPN User are required.")
             return
         self.accept()
 
-    def connection(self):
+    def connection(self) -> ConnectionProfile:
         return {
             "name": self.name_edit.text().strip(),
             "server": self.server_edit.text().strip(),
@@ -97,7 +109,7 @@ class ConnectionEditDialog(QDialog):
 
 
 class SecretPromptDialog(QDialog):
-    def __init__(self, connection_name, parent=None):
+    def __init__(self, connection_name: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Store VPN Secrets")
 
@@ -124,22 +136,27 @@ class SecretPromptDialog(QDialog):
 
         self.setLayout(layout)
 
-    def _on_save(self):
+    def _on_save(self) -> None:
         if not self.password_edit.text().strip() or not self.otp_secret_edit.text().strip():
             QMessageBox.warning(self, "Invalid input", "Password and OTP secret are required.")
             return
         self.accept()
 
-    def secrets(self):
+    def secrets(self) -> tuple[str, str]:
         return self.password_edit.text().strip(), self.otp_secret_edit.text().strip()
 
 
 class ConnectionSettingsDialog(QDialog):
-    def __init__(self, parent=None, profiles=None, active_name=None):
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        profiles: Optional[list[ConnectionProfile]] = None,
+        active_name: Optional[str] = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("VPN Connections")
-        self._profiles = [dict(p) for p in (profiles or [])]
-        self._active_name = active_name
+        self._profiles: list[ConnectionProfile] = [p.copy() for p in (profiles or [])]
+        self._active_name: Optional[str] = active_name
 
         layout = QVBoxLayout()
         self.list_widget = QListWidget()
@@ -174,28 +191,28 @@ class ConnectionSettingsDialog(QDialog):
 
         self._refresh_list()
 
-    def _display_label(self, p):
-        active = " [active]" if p.get("name") == self._active_name else ""
-        return f"{p.get('name', '')}: {p.get('user', '')}@{p.get('server', '')}{active}"
+    def _display_label(self, p: ConnectionProfile) -> str:
+        active = " [active]" if p["name"] == self._active_name else ""
+        return f"{p['name']}: {p['user']}@{p['server']}{active}"
 
-    def _refresh_list(self):
+    def _refresh_list(self) -> None:
         self.list_widget.clear()
         for p in self._profiles:
             self.list_widget.addItem(self._display_label(p))
 
-    def _selected_index(self):
+    def _selected_index(self) -> Optional[int]:
         row = self.list_widget.currentRow()
         return row if row >= 0 else None
 
-    def _name_exists(self, name, skip_index=None):
+    def _name_exists(self, name: str, skip_index: Optional[int] = None) -> bool:
         for i, p in enumerate(self._profiles):
             if skip_index is not None and i == skip_index:
                 continue
-            if p.get("name") == name:
+            if p["name"] == name:
                 return True
         return False
 
-    def _add_profile(self):
+    def _add_profile(self) -> None:
         dlg = ConnectionEditDialog(self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -208,7 +225,7 @@ class ConnectionSettingsDialog(QDialog):
             self._active_name = conn["name"]
         self._refresh_list()
 
-    def _edit_profile(self):
+    def _edit_profile(self) -> None:
         idx = self._selected_index()
         if idx is None:
             return
@@ -220,58 +237,58 @@ class ConnectionSettingsDialog(QDialog):
         if self._name_exists(updated["name"], skip_index=idx):
             QMessageBox.warning(self, "Duplicate name", "A connection with this name already exists.")
             return
-        old_name = current.get("name")
+        old_name = current["name"]
         self._profiles[idx] = updated
         if self._active_name == old_name:
             self._active_name = updated["name"]
         self._refresh_list()
 
-    def _remove_profile(self):
+    def _remove_profile(self) -> None:
         idx = self._selected_index()
         if idx is None:
             return
         removed = self._profiles.pop(idx)
-        if removed.get("name") == self._active_name:
+        if removed["name"] == self._active_name:
             self._active_name = self._profiles[0]["name"] if self._profiles else None
         self._refresh_list()
 
-    def _set_active_selected(self):
+    def _set_active_selected(self) -> None:
         idx = self._selected_index()
         if idx is None:
             return
-        self._active_name = self._profiles[idx].get("name")
+        self._active_name = self._profiles[idx]["name"]
         self._refresh_list()
 
-    def _on_save(self):
+    def _on_save(self) -> None:
         if self._profiles and not self._active_name:
-            self._active_name = self._profiles[0].get("name")
+            self._active_name = self._profiles[0]["name"]
         self.accept()
 
-    def result_state(self):
+    def result_state(self) -> tuple[list[ConnectionProfile], Optional[str]]:
         return self._profiles, self._active_name
 
 class VPNApp:
-    def __init__(self):
+    def __init__(self) -> None:
         self.app = QApplication(sys.argv)
-        self.helper_path = os.getenv("VPN_TRAY_HELPER") or "/usr/lib/vpn-tray/vpn-tray-helper.sh"
-        self.runtime_dir = os.getenv("VPN_TRAY_RUNTIME_DIR") or self._default_runtime_dir()
-        self.pid_filename = os.getenv("VPN_TRAY_PID_FILENAME") or "vpn_tray.pid"
-        self.pid_file = os.path.join(self.runtime_dir, self.pid_filename)
-        self.lock_file = os.getenv("VPN_TRAY_LOCK_FILE") or "/tmp/vpn-tray.lock"
-        self.config_dir = os.getenv("VPN_TRAY_CONFIG_DIR") or self._default_config_dir()
-        self.config_file = os.path.join(self.config_dir, "connections.json")
-        self.connection_profiles = []
-        self.active_connection_name = None
-        self.settings_dialog = None
-        self.recent_err_lines = deque(maxlen=12)
-        self._connected_emitted = False
+        self.helper_path: str = os.getenv("VPN_TRAY_HELPER") or "/usr/lib/vpn-tray/vpn-tray-helper.sh"
+        self.runtime_dir: str = os.getenv("VPN_TRAY_RUNTIME_DIR") or self._default_runtime_dir()
+        self.pid_filename: str = os.getenv("VPN_TRAY_PID_FILENAME") or "vpn_tray.pid"
+        self.pid_file: str = os.path.join(self.runtime_dir, self.pid_filename)
+        self.lock_file: str = os.getenv("VPN_TRAY_LOCK_FILE") or "/tmp/vpn-tray.lock"
+        self.config_dir: str = os.getenv("VPN_TRAY_CONFIG_DIR") or self._default_config_dir()
+        self.config_file: str = os.path.join(self.config_dir, "connections.json")
+        self.connection_profiles: list[ConnectionProfile] = []
+        self.active_connection_name: Optional[str] = None
+        self.settings_dialog: Optional[ConnectionSettingsDialog] = None
+        self.recent_err_lines: deque[str] = deque(maxlen=12)
+        self._connected_emitted: bool = False
         self._connect_result_lock = threading.Lock()
-        self._connect_result_reported = False
-        self._wants_connection = False
-        self._network_was_lost_while_connected = False
-        self._auto_reconnect_in_progress = False
-        self._nm_last_state = None
-        self._nm_monitor_proc = None
+        self._connect_result_reported: bool = False
+        self._wants_connection: bool = False
+        self._network_was_lost_while_connected: bool = False
+        self._auto_reconnect_in_progress: bool = False
+        self._nm_last_state: Optional[int] = None
+        self._nm_monitor_proc: Optional[subprocess.Popen[str]] = None
 
         if not self.acquire_single_instance_lock():
             print("Another vpn-tray instance is already running.", file=sys.stderr, flush=True)
@@ -328,20 +345,20 @@ class VPNApp:
         self._start_network_monitor()
 
     @staticmethod
-    def _default_runtime_dir():
+    def _default_runtime_dir() -> str:
         xdg_runtime = os.getenv("XDG_RUNTIME_DIR")
         if xdg_runtime:
             return os.path.join(xdg_runtime, "vpn-tray")
         return f"/tmp/vpn-tray-{os.getuid()}"
 
     @staticmethod
-    def _default_config_dir():
+    def _default_config_dir() -> str:
         xdg_config = os.getenv("XDG_CONFIG_HOME")
         if xdg_config:
             return os.path.join(xdg_config, "vpn-tray")
         return os.path.join(os.path.expanduser("~/.config"), "vpn-tray")
 
-    def _normalize_profile(self, profile):
+    def _normalize_profile(self, profile: Any) -> Optional[ConnectionProfile]:
         if not isinstance(profile, dict):
             return None
         name = str(profile.get("name", "")).strip()
@@ -352,7 +369,7 @@ class VPNApp:
             return None
         return {"name": name, "server": server, "user": user, "auto_reconnect": auto_reconnect}
 
-    def _load_connections(self):
+    def _load_connections(self) -> None:
         self.connection_profiles = []
         self.active_connection_name = None
 
@@ -374,7 +391,7 @@ class VPNApp:
         if self.connection_profiles and not any(p["name"] == self.active_connection_name for p in self.connection_profiles):
             self.active_connection_name = self.connection_profiles[0]["name"]
 
-    def _save_connections(self):
+    def _save_connections(self) -> None:
         try:
             os.makedirs(self.config_dir, mode=0o700, exist_ok=True)
             with open(self.config_file, "w", encoding="utf-8") as f:
@@ -389,13 +406,13 @@ class VPNApp:
         except OSError as e:
             self.log_error("Failed to save connection settings.", e)
 
-    def _active_profile(self):
+    def _active_profile(self) -> Optional[ConnectionProfile]:
         for p in self.connection_profiles:
-            if p.get("name") == self.active_connection_name:
+            if p["name"] == self.active_connection_name:
                 return p
         return None
 
-    def _refresh_connection_menu(self):
+    def _refresh_connection_menu(self) -> None:
         self.connection_menu.clear()
         if not self.connection_profiles:
             no_profiles_action = QAction("No connections configured")
@@ -414,12 +431,12 @@ class VPNApp:
 
         self._update_connect_action_label()
 
-    def _set_active_connection(self, name):
+    def _set_active_connection(self, name: str) -> None:
         self.active_connection_name = name
         self._save_connections()
         self._refresh_connection_menu()
 
-    def _update_connect_action_label(self):
+    def _update_connect_action_label(self) -> None:
         profile = self._active_profile()
         if profile:
             self.connect_action.setText(f"Connect ({profile['name']})")
@@ -430,25 +447,25 @@ class VPNApp:
             return
         self.connect_action.setEnabled(profile is not None)
 
-    def _active_auto_reconnect(self):
+    def _active_auto_reconnect(self) -> bool:
         profile = self._active_profile()
         if not profile:
             return False
         return bool(profile.get("auto_reconnect", True))
 
     @staticmethod
-    def _connection_key_base(profile):
-        raw = f"{profile.get("user", "default")}@{profile.get("server", "default")} ({profile.get("name", "default")})"
+    def _connection_key_base(profile: ConnectionProfile) -> str:
+        raw = f"{profile['user']}@{profile['server']} ({profile['name']})"
         base = re.sub(r"[^A-Za-z0-9._-]", "_", raw)
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
         prefix = base[:40] if base else "default"
         return f"{prefix}_{digest}"
 
-    def _secret_entry_names(self, profile):
+    def _secret_entry_names(self, profile: ConnectionProfile) -> tuple[str, str]:
         base = self._connection_key_base(profile)
         return f"{base}.{KEYRING_PASSWORD_SUFFIX}", f"{base}.{KEYRING_OTP_SUFFIX}"
 
-    def _read_secret(self, entry_name):
+    def _read_secret(self, entry_name: str) -> Optional[str]:
         if keyring is None:
             return None
         try:
@@ -457,7 +474,7 @@ class VPNApp:
             return None
         return value.strip() if isinstance(value, str) and value.strip() else None
 
-    def _write_secret(self, entry_name, value):
+    def _write_secret(self, entry_name: str, value: str) -> bool:
         if keyring is None:
             return False
         try:
@@ -466,7 +483,7 @@ class VPNApp:
         except Exception:
             return False
 
-    def _ensure_profile_secrets(self, profile):
+    def _ensure_profile_secrets(self, profile: ConnectionProfile) -> tuple[Optional[str], Optional[str]]:
         password_key, otp_key = self._secret_entry_names(profile)
 
         password = self._read_secret(password_key)
@@ -474,7 +491,7 @@ class VPNApp:
         if password and otp_secret:
             return password, otp_secret
 
-        dlg = SecretPromptDialog(profile.get("name", "connection"), self.tray.contextMenu())
+        dlg = SecretPromptDialog(profile["name"], self.tray.contextMenu())
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None, None
 
@@ -487,7 +504,7 @@ class VPNApp:
             return None, None
         return password, otp_secret
 
-    def _apply_settings_from_dialog(self):
+    def _apply_settings_from_dialog(self) -> None:
         if self.settings_dialog is None:
             return
 
@@ -500,14 +517,14 @@ class VPNApp:
         self._refresh_connection_menu()
         self._update_connect_action_label()
 
-    def _on_settings_finished(self, _result_code):
+    def _on_settings_finished(self, _result_code: int) -> None:
         if self.settings_dialog is None:
             return
 
         self.settings_dialog.deleteLater()
         self.settings_dialog = None
 
-    def open_settings(self):
+    def open_settings(self) -> None:
         if self.settings_dialog is not None and self.settings_dialog.isVisible():
             self.settings_dialog.showNormal()
             self.settings_dialog.raise_()
@@ -523,7 +540,7 @@ class VPNApp:
         self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
 
-    def acquire_single_instance_lock(self):
+    def acquire_single_instance_lock(self) -> bool:
         """Ensures only one tray instance is active."""
         try:
             self.lock_fp = open(self.lock_file, "w")
@@ -535,7 +552,7 @@ class VPNApp:
         except OSError:
             return False
 
-    def release_single_instance_lock(self):
+    def release_single_instance_lock(self) -> None:
         try:
             if hasattr(self, "lock_fp") and self.lock_fp:
                 fcntl.flock(self.lock_fp.fileno(), fcntl.LOCK_UN)
@@ -544,7 +561,7 @@ class VPNApp:
             pass
 
     @staticmethod
-    def _is_pid_alive(pid):
+    def _is_pid_alive(pid: int) -> bool:
         try:
             os.kill(pid, 0)
             return True
@@ -553,7 +570,7 @@ class VPNApp:
         except PermissionError:
             return True
 
-    def _read_pid_from_file(self):
+    def _read_pid_from_file(self) -> Optional[int]:
         if not os.path.exists(self.pid_file):
             return None
         try:
@@ -565,7 +582,7 @@ class VPNApp:
         except OSError:
             return None
 
-    def update_ui_state(self, is_connected):
+    def update_ui_state(self, is_connected: bool) -> None:
         """Toggles menu buttons and tray icon based on connection state."""
         if is_connected:
             self.tray.setIcon(QIcon.fromTheme("network-vpn"))
@@ -577,7 +594,7 @@ class VPNApp:
             self.disconnect_action.setEnabled(False)
             self._update_connect_action_label()
 
-    def check_initial_state(self):
+    def check_initial_state(self) -> None:
         """Checks if the VPN is already running when the app starts."""
         pid = self._read_pid_from_file()
         if pid and self._is_pid_alive(pid):
@@ -594,7 +611,7 @@ class VPNApp:
         self._wants_connection = False
         self.update_ui_state(is_connected=False)
 
-    def show_connected_msg(self):
+    def show_connected_msg(self) -> None:
         self._wants_connection = True
         self._network_was_lost_while_connected = False
         self._auto_reconnect_in_progress = False
@@ -605,13 +622,13 @@ class VPNApp:
         else:
             self.tray.showMessage("VPN Connected", "Secure tunnel established.")
 
-    def _start_network_monitor(self):
+    def _start_network_monitor(self) -> None:
         if shutil.which("dbus-monitor") is None:
             print("Auto-reconnect disabled: dbus-monitor not found.", file=sys.stderr, flush=True)
             return
         threading.Thread(target=self._network_monitor_loop, daemon=True).start()
 
-    def _network_monitor_loop(self):
+    def _network_monitor_loop(self) -> None:
         cmd = [
             "dbus-monitor",
             "--system",
@@ -629,13 +646,17 @@ class VPNApp:
             print(f"Failed to start dbus-monitor: {e}", file=sys.stderr, flush=True)
             return
 
-        for line in self._nm_monitor_proc.stdout:
+        stdout_pipe = self._nm_monitor_proc.stdout
+        if stdout_pipe is None:
+            return
+
+        for line in stdout_pipe:
             match = re.search(r"uint32\s+(\d+)", line)
             if not match:
                 continue
             self.signals.nm_state_changed_signal.emit(int(match.group(1)))
 
-    def _on_nm_state_changed(self, state):
+    def _on_nm_state_changed(self, state: int) -> None:
         if state == self._nm_last_state:
             return
         self._nm_last_state = state
@@ -679,18 +700,18 @@ class VPNApp:
         self.connect_vpn()
 
     @staticmethod
-    def _line_indicates_connected(log_line):
+    def _line_indicates_connected(log_line: str) -> bool:
         return "Continuing in background; pid" in log_line
 
     @staticmethod
-    def _extract_background_pid(log_line):
+    def _extract_background_pid(log_line: str) -> Optional[int]:
         match = re.search(r"Continuing in background; pid\s+(\d+)", log_line)
         if not match:
             return None
         return int(match.group(1))
 
     @staticmethod
-    def _is_benign_stderr_line(log_line):
+    def _is_benign_stderr_line(log_line: str) -> bool:
         text = log_line.strip().lower()
         benign_markers = (
             "please enter your username and password.",
@@ -701,7 +722,7 @@ class VPNApp:
         )
         return any(marker in text for marker in benign_markers)
 
-    def _emit_connect_success_once(self):
+    def _emit_connect_success_once(self) -> None:
         with self._connect_result_lock:
             if self._connect_result_reported:
                 return
@@ -710,7 +731,7 @@ class VPNApp:
             self._auto_reconnect_in_progress = False
         self.signals.connected_signal.emit()
 
-    def _emit_connect_failure_once(self, message):
+    def _emit_connect_failure_once(self, message: str) -> None:
         with self._connect_result_lock:
             if self._connect_result_reported:
                 return
@@ -718,7 +739,7 @@ class VPNApp:
             self._auto_reconnect_in_progress = False
         self.signals.connect_failed_signal.emit(message)
 
-    def _wait_for_vpn_pid(self, timeout_seconds=6.0):
+    def _wait_for_vpn_pid(self, timeout_seconds: float = 6.0) -> bool:
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             pid = self._read_pid_from_file()
@@ -727,7 +748,7 @@ class VPNApp:
             time.sleep(0.2)
         return False
 
-    def stream_logs(self, pipe, prefix, file_stream):
+    def stream_logs(self, pipe: Any, prefix: str, file_stream: Any) -> None:
         for line in pipe:
             log_line = line.strip()
             print(log_line, file=file_stream, flush=True)
@@ -745,7 +766,7 @@ class VPNApp:
                 else:
                     self._emit_connect_success_once()
 
-    def _check_dependencies(self):
+    def _check_dependencies(self) -> bool:
         required = ["oathtool", self.helper_path]
         missing = [binary for binary in required if shutil.which(binary) is None]
         if missing:
@@ -760,10 +781,10 @@ class VPNApp:
             return False
         return True
 
-    def _tail_error_hint(self):
+    def _tail_error_hint(self) -> Optional[str]:
         return self.recent_err_lines[-1] if self.recent_err_lines else None
 
-    def _categorize_connect_failure(self, return_code):
+    def _categorize_connect_failure(self, return_code: int) -> str:
         hint = "\n".join(self.recent_err_lines).lower()
 
         if return_code in (126, 127) or "not authorized" in hint or "authentication dialog was dismissed" in hint:
@@ -778,7 +799,7 @@ class VPNApp:
             return f"VPN connection failed: {tail}"
         return "VPN connection failed."
 
-    def _monitor_connect_exit(self, proc):
+    def _monitor_connect_exit(self, proc: subprocess.Popen[str]) -> None:
         return_code = proc.wait()
         if self._connected_emitted:
             return
@@ -790,7 +811,7 @@ class VPNApp:
 
         self._emit_connect_failure_once(self._categorize_connect_failure(return_code))
 
-    def log_error(self, message, exception=None):
+    def log_error(self, message: str, exception: Optional[Exception] = None) -> None:
         error_msg = message
         if exception:
             error_msg += f" Details: {exception}"
@@ -798,10 +819,10 @@ class VPNApp:
         self.tray.showMessage("VPN Error", message)
         self.update_ui_state(is_connected=False)
 
-    def _run_and_capture(self, cmd, input_text=None):
+    def _run_and_capture(self, cmd: list[str], input_text: Optional[str] = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(cmd, text=True, capture_output=True, input=input_text)
 
-    def _trim_stderr(self, text):
+    def _trim_stderr(self, text: Optional[str]) -> Optional[str]:
         if not text:
             return None
         lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -809,7 +830,7 @@ class VPNApp:
             return None
         return lines[-1]
 
-    def connect_vpn(self):
+    def connect_vpn(self) -> None:
         if not self._check_dependencies():
             return
 
@@ -863,13 +884,17 @@ class VPNApp:
         threading.Thread(target=self._monitor_connect_exit, args=(proc,), daemon=True).start()
         
         try:
-            proc.stdin.write(auth_payload)
-            proc.stdin.flush()
-            proc.stdin.close()
+            stdin_pipe = proc.stdin
+            if stdin_pipe is None:
+                self.log_error("Failed to pipe credentials.")
+                return
+            stdin_pipe.write(auth_payload)
+            stdin_pipe.flush()
+            stdin_pipe.close()
         except Exception as e:
             self.log_error("Failed to pipe credentials.", e)
 
-    def disconnect_vpn(self):
+    def disconnect_vpn(self) -> None:
         self.tray.showMessage("VPN", "Disconnecting...")
         self.disconnect_action.setEnabled(False)
         self._wants_connection = False
@@ -890,7 +915,7 @@ class VPNApp:
         except Exception as e:
             self.log_error("Failed to disconnect VPN.", e)
 
-    def force_reset(self):
+    def force_reset(self) -> None:
         """Forcefully kills any openconnect instances and wipes the PID file."""
         self._wants_connection = False
         self._network_was_lost_while_connected = False
