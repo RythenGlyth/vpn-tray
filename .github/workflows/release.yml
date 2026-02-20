@@ -120,10 +120,11 @@ jobs:
           install -m 0755 vpn-tray.py "${PKGROOT}/usr/lib/vpn-tray/vpn-tray.py"
           install -m 0755 vpn-tray-helper.sh "${PKGROOT}/usr/lib/vpn-tray/vpn-tray-helper.sh"
 
-          cat > "${PKGROOT}/usr/bin/vpn-tray" <<'EOF'
-#!/usr/bin/env bash
-exec /usr/bin/python3 /usr/lib/vpn-tray/vpn-tray.py "$@"
-EOF
+          cat <<EOF > "${PKGROOT}/usr/bin/vpn-tray"
+          #!/usr/bin/env bash
+          exec /usr/bin/python3 /usr/lib/vpn-tray/vpn-tray.py "\$@"
+          EOF
+          sed -i 's/^          //' "${PKGROOT}/usr/bin/vpn-tray"
           chmod 0755 "${PKGROOT}/usr/bin/vpn-tray"
 
           sed \
@@ -142,18 +143,19 @@ EOF
           install -m 0644 LICENSE "${PKGROOT}/usr/share/doc/vpn-tray/LICENSE"
           install -m 0644 README.md "${PKGROOT}/usr/share/doc/vpn-tray/README.md"
 
-          cat > "${PKGROOT}/DEBIAN/control" <<EOF
-Package: vpn-tray
-Version: ${VERSION}
-Section: net
-Priority: optional
-Architecture: all
-Depends: openconnect, oathtool, python3, python3-pyqt6, python3-keyring, sudo, systemd
-Maintainer: vpn-tray maintainers
-Description: System tray app for OpenConnect VPN with least-privilege helper
- A Linux system tray app for OpenConnect VPN with user-level UX and
- a least-privilege privileged helper.
-EOF
+          cat <<EOF > "${PKGROOT}/DEBIAN/control"
+          Package: vpn-tray
+          Version: ${VERSION}
+          Section: net
+          Priority: optional
+          Architecture: all
+          Depends: openconnect, oathtool, python3, python3-pyqt6, python3-keyring, sudo, systemd
+          Maintainer: vpn-tray maintainers
+          Description: System tray app for OpenConnect VPN with least-privilege helper
+           A Linux system tray app for OpenConnect VPN with user-level UX and
+           a least-privilege privileged helper.
+          EOF
+          sed -i 's/^          //' "${PKGROOT}/DEBIAN/control"
 
           dpkg-deb --build --root-owner-group "${PKGROOT}" "dist/vpn-tray_${VERSION}_all.deb"
 
