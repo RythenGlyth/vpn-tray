@@ -1,0 +1,3 @@
+# Installed by vpn-tray install.sh
+# Allow only the vpn-tray privileged helper subcommands without password.
+@INSTALL_USER@ ALL=(root) NOPASSWD: @HELPER_PATH@ start *, @HELPER_PATH@ stop *, @HELPER_PATH@ reset *

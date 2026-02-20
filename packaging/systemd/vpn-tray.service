@@ -1,0 +1,18 @@
+[Unit]
+Description=VPN tray
+Wants=graphical-session.target network-online.target
+After=graphical-session.target network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+Environment=VPN_TRAY_HELPER=@VPN_TRAY_HELPER@
+Environment=VPN_TRAY_RUNTIME_DIR=@VPN_TRAY_RUNTIME_DIR@
+Environment=VPN_TRAY_PID_FILENAME=@VPN_TRAY_PID_FILENAME@
+Environment=VPN_TRAY_LOCK_FILE=@VPN_TRAY_LOCK_FILE@
+ExecStart=/usr/bin/vpn-tray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
